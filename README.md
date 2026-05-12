@@ -14,5 +14,5 @@ The counts_creation file was used to turn the DHS surveys into the cluster-cohor
 The data_creation file combines the count data wiht the covariates and creates the finished data and the neighborhood martix.
 The model_estiamtion file contains the code the different Bayesian models were fit with as well as the glm model. 
 The graph_creation file was used to create all tables and graphs in the PDF. It also contains the Leroux model and the Morans I test. 
-An RDS file containing the finished output ot data_creation file is also included. This can be loaded into the model_estimation script to test the model.
+An RDS file containing the finished output of data_creation file is also included. This can be loaded into the model_estimation script to test the model.
 The matrix is also here. Feel free to experiment! 
