@@ -10,9 +10,9 @@ But may the ugliness of this code be a testament to its human origins, since it 
 
 The rest of the code should look fine though, by social science standards at least...... 
 
-The counts_creation file was used to turn the DHS surveys into the cluster-cohort data using the R-Summer package. 
-The data_creation file combines the count data wiht the covariates and creates the finished data and the neighborhood martix.
+The Counts_creation file was used to turn the DHS surveys into the cluster-cohort data using the R-Summer package. 
+The data_prep file combines the count data wiht the covariates and creates the finished data and the neighborhood martix.
 The model_estiamtion file contains the code the different Bayesian models were fit with as well as the glm model. 
-The graph_creation file was used to create all tables and graphs in the PDF. It also contains the Leroux model and the Morans I test. 
+The Graph_creation file was used to create all tables and graphs in the PDF. It also contains the Leroux model and the Morans I test. 
 An RDS file containing the finished output of data_creation file is also included. This can be loaded into the model_estimation script to test the model.
 The matrix is also here. Feel free to experiment! 
