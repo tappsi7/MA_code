@@ -1,0 +1,174 @@
+rm(list = ls())
+library(INLA)
+library(tidyverse)
+
+## This script runs the model 
+
+count_data <- readRDS("C:/Users/fabia/OneDrive/Desktop/Master Thesis/R-Stuff/all_counts.rds")
+mat        <- readRDS("C:/Users/fabia/OneDrive/Desktop/Master Thesis/R-Stuff/big_mat.rds")
+
+# Prepping the data 
+
+count_data$hum_scaled_lag[is.na(count_data$hum_scaled_lag)] <- 0
+
+# Prepping the matrix to be usable for INLA 
+mat <- mat[order(rownames(mat)), order(colnames(mat))]
+adj_graph <- inla.read.graph(Matrix::Matrix(mat, sparse = TRUE))
+
+# Filtering for conflict years and creating the indecies for the analysis
+count_data <- count_data %>%
+  filter(conflict == 1) %>%          
+  mutate(
+    region_idx = as.integer(factor(region)),
+    years_idx  = as.integer(factor(years)))
+
+#Creating the interaction term   
+count_data$aid_interaction <- count_data$hum_scaled_lag * count_data$intense  
+
+# Creating the scaled death variable - the hum aid scaled one does already exost
+count_data <- count_data %>%
+  group_by(region) %>%
+  mutate(
+    deaths_scaled = as.numeric(scale(deaths))
+  ) %>%
+  ungroup()
+
+# Creating the extra region id for the iid 
+count_data$region.id.copy <- count_data$region_idx
+# Creating the lagged death variable
+count_data$deaths_scaled_lag <- lag(count_data$deaths_scaled, n = 1)
+
+
+## This is the model function. Remove the # for the fixed effects variable 
+## to change the model configuration 
+
+model <- Y ~ 1 +
+
+  f(age_idx,
+    model       = "rw1",
+    scale.model = TRUE,
+    hyper       = list(prec = list(prior = "pc.prec",
+                                   param = c(3, 0.01)))) +
+  
+  # Spatial smoothing — absorbs regional confounders
+  f(region_idx,
+    model       = "bym2",
+    graph       = adj_graph,
+    scale.model = TRUE,
+    hyper       = list(
+      prec = list(prior = "pc.prec", param = c(0.5, 0.01)),
+      phi  = list(prior = "pc",      param = c(0.7, 0.1))
+    )) +
+
+  f(years_idx,
+    model       = "rw1",
+    scale.model = TRUE,
+    hyper       = list(prec = list(prior = "pc.prec",
+                                   param = c(3, 0.01)))) +
+  
+  f(region.id.copy,
+    model       = "iid",
+    hyper       = list(prec = list(prior = "pc.prec",
+                                   param = c(1, 0.5)))) +
+  # Covariates of interest jsut remove the # to add to the model
+  deaths_scaled +  
+  deaths_scaled_lag + 
+  hum_scaled_lag +        
+  #intense +
+  #aid_interaction +
+  strata 
+
+## The actual code that runs the model 
+model <- inla(
+  model,
+  family   = "betabinomial",
+  data     = count_data,
+  Ntrials  = count_data$total,
+  verbose  = TRUE,
+  control.mode = list(restart = TRUE),
+  control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE, save.memory = TRUE),
+  control.predictor = list(compute = TRUE, link = 1),
+  control.fixed = list(
+    mean.intercept = -3,
+    prec.intercept = 1.5,
+    mean        = 0,          
+    prec        = 0.1
+  ))
+
+saveRDS(model, file = "C:/Users/fabia/OneDrive/Desktop/Saved outputs/model_1_final.rds")
+summary(model)
+saveRDS(count_data, file = "C:/Users/fabia/OneDrive/Desktop/Saved outputs/used_data.rds")
+
+#----The twoway fixed effects----
+
+rm(list= ls())
+
+library(spdep)
+
+count_data <- readRDS("C:/Users/fabia/OneDrive/Desktop/Master Thesis/R-Stuff/all_counts.rds")
+#weights_data <- readRDS("/root/weights_all.rds")
+mat <- readRDS("C:/Users/fabia/OneDrive/Desktop/Master Thesis/R-Stuff/big_mat.rds")
+
+mat <- mat[order(rownames(mat)), 
+           order(colnames(mat))]
+
+
+count_data <- count_data %>%
+  group_by(region) %>%
+  mutate(
+    deaths_scaled = as.numeric(scale(deaths))
+  ) %>%
+  ungroup()
+
+
+count_data$deaths_scaled_lag <- lag(count_data$deaths_scaled, n = 1)
+
+
+
+
+# Convert adjacency matrix to listw object
+W_list <- mat2listw(mat, style = "W")  
+
+count_data$region_fe <- as.factor(count_data$region)
+count_data$time_fe   <- as.factor(count_data$years)
+count_data$age_fe   <- as.factor(count_data$age)
+
+# Compute the spatial lag of Y
+region_year <- count_data %>%
+  group_by(region, years) %>%
+  summarise(
+    Y_prop = sum(Y) / sum(total),
+    .groups = "drop"
+  )
+
+# compute spatial lag per time period
+region_year <- region_year %>%
+  group_by(years) %>%
+  mutate(
+    Y_lag = lag.listw(W_list, Y_prop[order(region)])[order(order(region))]
+  ) %>%
+  ungroup()
+
+#merge back to original data
+count_data <- count_data %>%
+  left_join(region_year %>% select(region, years, Y_lag),
+            by = c("region", "years"))
+
+count_data <- count_data %>% filter(conflict == 1)
+
+glm_model <- glm(
+  cbind(Y, total - Y) ~
+    Y_lag + 
+    deaths_scaled +
+    deaths_scaled_lag +
+    hum_scaled_lag +
+    strata +
+    region_fe +
+    time_fe +
+    age_fe,
+  family = binomial(link = "logit"),
+  data   = count_data
+)
+
+summary(glm_model)
+saveRDS(glm_model, file = "C:/Users/fabia/OneDrive/Desktop/Saved outputs/glm_model_final.rds")
