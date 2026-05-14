@@ -963,6 +963,132 @@ aid_plot <- ggplot(count_aid_pred_data, aes(x = aid_unscaled/1000000, y = U5MR))
 ggsave("C:/Users/fabia/OneDrive/Desktop/Master Thesis/R-Stuff/Graphs/aid_pred.jpg",
        plot = aid_plot, width = 10, height = 5)
 
+
+# ---- load model 2 ----
+model2 <- readRDS("C:/Users/fabia/OneDrive/Desktop/Saved outputs/model_2_final.rds")  # adjust path
+
+
+intercept2       <- model2$summary.fixed["(Intercept)", "mean"]
+beta_aid2        <- model2$summary.fixed["hum_scaled_lag", "mean"]
+beta_intense2    <- model2$summary.fixed["intense", "mean"]
+beta_aid_int2    <- model2$summary.fixed["aid_interaction", "mean"]
+beta_strata2     <- model2$summary.fixed["strataurban", "mean"]
+
+intercept2_low      <- model2$summary.fixed["(Intercept)", "0.025quant"]
+beta_aid2_low       <- model2$summary.fixed["hum_scaled_lag", "0.025quant"]
+beta_intense2_low   <- model2$summary.fixed["intense", "0.025quant"]
+beta_aid_int2_low   <- model2$summary.fixed["aid_interaction", "0.025quant"]
+
+intercept2_high     <- model2$summary.fixed["(Intercept)", "0.975quant"]
+beta_aid2_high      <- model2$summary.fixed["hum_scaled_lag", "0.975quant"]
+beta_intense2_high  <- model2$summary.fixed["intense", "0.975quant"]
+beta_aid_int2_high  <- model2$summary.fixed["aid_interaction", "0.975quant"]
+
+
+spatial_effect2  <- model2$summary.random$region_idx[unique(region_data$region_idx), "mean"]
+temporal_effect2 <- model2$summary.random$years_idx[unique(region_data$years_idx), "mean"]
+cohort_effect2   <- model2$summary.random$age_idx[region_data$age_idx, "mean"]
+iid_effect2      <- model2$summary.random$region.id.copy[unique(region_data$region_idx), "mean"]
+
+region_data2 <- region_data |>
+  mutate(
+    spatial_re  = spatial_effect2,
+    temporal_re = temporal_effect2,
+    cohort_re   = cohort_effect2,
+    iid_re      = iid_effect2
+  )
+
+
+aid_pred_low <- map_dfr(seq_along(aid_scaled), function(i) {
+  region_data2 |>
+    mutate(
+      aid_unscaled = aid_unscaled[i],
+      pred_mean = plogis(
+        intercept2 +
+          beta_aid2       * aid_scaled[i] +
+          beta_intense2   * 0 +
+          beta_aid_int2   * (aid_scaled[i] * 0) +
+          beta_strata2    * as.numeric(strata == "urban") +
+          spatial_re + temporal_re + cohort_re + iid_re
+      ),
+      pred_lower = plogis(
+        intercept2_low +
+          beta_aid2_low     * aid_scaled[i] +
+          beta_intense2_low * 0 +
+          beta_aid_int2_low * (aid_scaled[i] * 0) +
+          spatial_re + temporal_re + cohort_re + iid_re
+      ),
+      pred_upper = plogis(
+        intercept2_high +
+          beta_aid2_high     * aid_scaled[i] +
+          beta_intense2_high * 0 +
+          beta_aid_int2_high * (aid_scaled[i] * 0) +
+          spatial_re + temporal_re + cohort_re + iid_re
+      )
+    )
+})
+
+u5mr_low <- compute_u5mr(aid_pred_low, aid_unscaled) |>
+  mutate(conflict = "Low Violence")
+
+
+aid_pred_high <- map_dfr(seq_along(aid_scaled), function(i) {
+  region_data2 |>
+    mutate(
+      aid_unscaled = aid_unscaled[i],
+      pred_mean = plogis(
+        intercept2 +
+          beta_aid2       * aid_scaled[i] +
+          beta_intense2   * 1 +
+          beta_aid_int2   * (aid_scaled[i] * 1) +
+          beta_strata2    * as.numeric(strata == "urban") +
+          spatial_re + temporal_re + cohort_re + iid_re
+      ),
+      pred_lower = plogis(
+        intercept2_low +
+          beta_aid2_low     * aid_scaled[i] +
+          beta_intense2_low * 1 +
+          beta_aid_int2_low * (aid_scaled[i] * 1) +
+          spatial_re + temporal_re + cohort_re + iid_re
+      ),
+      pred_upper = plogis(
+        intercept2_high +
+          beta_aid2_high     * aid_scaled[i] +
+          beta_intense2_high * 1 +
+          beta_aid_int2_high * (aid_scaled[i] * 1) +
+          spatial_re + temporal_re + cohort_re + iid_re
+      )
+    )
+})
+
+u5mr_high <- compute_u5mr(aid_pred_high, aid_unscaled) |>
+  mutate(conflict = "High Violence")
+
+
+combined_pred <- bind_rows(u5mr_low, u5mr_high)
+
+conflict_plot <- ggplot(combined_pred, aes(x = aid_unscaled / 1000000, y = U5MR,
+                                           color = conflict, fill = conflict)) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymin = U5MR_lower, ymax = U5MR_upper), alpha = 0.2, color = NA) +
+  coord_cartesian(ylim = range(c(combined_pred$U5MR_lower,
+                                 combined_pred$U5MR_upper)) * c(0.9, 1.1)) +
+  scale_color_manual(values = c("Low Violence"  = "steelblue",
+                                "High Violence" = "firebrick")) +
+  scale_fill_manual(values  = c("Low Violence"  = "steelblue",
+                                "High Violence" = "firebrick")) +
+  labs(
+    title  = "Predicted U5MR by Humanitarian Aid level under Low vs High Violence",
+    x      = "Humanitarian Aid in million USD",
+    y      = "Predicted U5MR",
+    color  = NULL,
+    fill   = NULL
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+ggsave("C:/Users/fabia/OneDrive/Desktop/Master Thesis/R-Stuff/Graphs/conflict_aid_pred.jpg",
+       plot = conflict_plot, width = 10, height = 5)
 #################################################################################
 ################################################################################
 #Density plots for main variables 
@@ -1017,9 +1143,11 @@ ggsave("C:/Users/fabia/OneDrive/Desktop/Master Thesis/R-Stuff/Graphs/deah_densit
 #################################################################################
 # Summary statistics table 
 
-summary_table <- count_data %>%
+count_data <- readRDS("C:/Users/fabia/OneDrive/Desktop/Saved outputs/used_data.rds")
+
+panel_a <- count_data %>%
   mutate(mortality_rate = Y / total) %>%
-  select(mortality_rate, hum_aid, deaths) %>%
+  select(mortality_rate) %>%
   summarise(across(everything(), list(
     Mean   = ~mean(., na.rm = TRUE),
     Median = ~median(., na.rm = TRUE),
@@ -1030,23 +1158,43 @@ summary_table <- count_data %>%
   ))) %>%
   pivot_longer(everything(),
                names_to  = c("Variable", "Statistic"),
-               names_pattern = "^(.*)_(Mean|Median|SD|Min|Max|N)$",  # fix is here
+               names_pattern = "^(.*)_(Mean|Median|SD|Min|Max|N)$",
                values_to = "Value") %>%
-  pivot_wider(names_from  = "Statistic", 
+  pivot_wider(names_from  = "Statistic",
               values_from = "Value") %>%
-  mutate(Variable = c("Mortality Rate (y/total)", 
-                      "Humanitarian Aid", 
-                      "Battle Deaths"))
+  mutate(Variable = c("Mortality Rate (Y/total)"))
 
-summary_table %>%
-  kbl(digits  = 3,
-      caption = "Descriptive Statistics",
-      format  = "latex",
+panel_b <- count_data %>%
+  select(hum_aid, deaths, hum_scaled, deaths_scaled) %>%
+  distinct() %>%
+  summarise(across(everything(), list(
+    Mean   = ~mean(., na.rm = TRUE),
+    Median = ~median(., na.rm = TRUE),
+    SD     = ~sd(., na.rm = TRUE),
+    Min    = ~min(., na.rm = TRUE),
+    Max    = ~max(., na.rm = TRUE),
+    N      = ~sum(!is.na(.))
+  ))) %>%
+  pivot_longer(everything(),
+               names_to  = c("Variable", "Statistic"),
+               names_pattern = "^(.*)_(Mean|Median|SD|Min|Max|N)$",
+               values_to = "Value") %>%
+  pivot_wider(names_from  = "Statistic",
+              values_from = "Value") %>%
+  mutate(Variable = c("Humanitarian Aid", "Battle Deaths",
+                      "Humanitarian Aid (Scaled)", "Battle Deaths (Scaled)"))
+
+
+bind_rows(panel_a, panel_b) %>%
+  kbl(digits   = 3,
+      caption  = "Descriptive Statistics",
+      format   = "latex",
       booktabs = TRUE) %>%
   kable_styling(latex_options = c("striped", "hold_position")) %>%
-  footnote(general = "N refers to non-missing observations.")library(modelsummary)
-
-
+  pack_rows("Panel A: Observation-Level Variables", 1, nrow(panel_a)) %>%
+  pack_rows("Panel B: Region-Year Level Variables", nrow(panel_a) + 1,
+            nrow(panel_a) + nrow(panel_b)) %>%
+  footnote(general = "N refers to non-missing observations. Region-year variables are computed on distinct region-year observations.")
 library(modelsummary)
 
 readRDS("C:/Users/fabia/OneDrive/Desktop/Saved outputs/glm_model_final.rds")
@@ -1090,6 +1238,59 @@ modelsummary(
   escape = FALSE
 )
 
+# Robustness check table 
+model_rob_mort <- readRDS("C:/Users/fabia/OneDrive/Desktop/Saved outputs/model_robust_m_final.rds")
+model_rob_aid <- readRDS("C:/Users/fabia/OneDrive/Desktop/Saved outputs/model_robust_h_final.rds")
+model_rob_con <- readRDS("C:/Users/fabia/OneDrive/Desktop/Saved outputs/model_robust_c_final.rds")
 
 
+extract_fixed <- function(model, model_name) {
+  fixed_all <- model$summary.fixed
+  
+  data.frame(
+    Model     = model_name,
+    Parameter = rownames(fixed_all),
+    Mean      = round(fixed_all[, "mean"], 3),
+    SD        = round(fixed_all[, "sd"], 3),
+    Q2.5      = round(fixed_all[, "0.025quant"], 3),
+    Q97.5     = round(fixed_all[, "0.975quant"], 3),
+    OR        = c(NA, round(exp(fixed_all[-1, "mean"]), 3)),
+    OR_low    = c(NA, round(exp(fixed_all[-1, "0.025quant"]), 3)),
+    OR_high   = c(NA, round(exp(fixed_all[-1, "0.975quant"]), 3))
+  ) %>%
+    mutate(
+      `OR [95% CI]` = ifelse(is.na(OR), "—",
+                             paste0(OR, " [", OR_low, ", ", OR_high, "]"))
+    ) %>%
+    select(Model, Parameter, Mean, SD, Q2.5, Q97.5, `OR [95% CI]`)
+}
+
+
+rob1 <- extract_fixed(model_rob_mort, "No Mortality Outliers")
+rob2 <- extract_fixed(model_rob_aid,       "No Aid Outliers")
+rob3 <- extract_fixed(model_rob_con,  "No Violence Outliers")
+
+
+combined_table <- bind_rows(rob1, rob2, rob3)
+
+colnames(combined_table) <- c("Model", "Parameter", "Mean", "SD",
+                              "2.5%", "97.5%", "OR [95% CI]")
+
+combined_table %>%
+  select(-Model) %>%  
+  kable(format    = "latex",
+        booktabs  = TRUE,
+        caption   = "Posterior summaries of fixed effects — robustness checks",
+        label     = "tab:robustness") %>%
+  kable_styling(latex_options = c("hold_position", "scale_down")) %>%
+  pack_rows("No Mortality Outliers", 
+            which(combined_table$Model == "No Mortality Outliers")[1],
+            tail(which(combined_table$Model == "No Mortality Outliers"), 1)) %>%
+  pack_rows("No Aid Outliers",
+            which(combined_table$Model == "No Aid Outliers")[1],
+            tail(which(combined_table$Model == "No Aid Outliers"), 1)) %>%
+  pack_rows("No Violence Outliers",
+            which(combined_table$Model == "No Violence Outliers")[1],
+            tail(which(combined_table$Model == "No Violence Outliers"), 1))%>%
+  column_spec(1, bold = TRUE)
 
