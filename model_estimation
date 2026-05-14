@@ -20,7 +20,8 @@ count_data <- count_data %>%
   filter(conflict == 1) %>%          
   mutate(
     region_idx = as.integer(factor(region)),
-    years_idx  = as.integer(factor(years)))
+    years_idx  = as.integer(factor(years)),
+    age_idx  = as.integer(factor(age)))
 
 #Creating the interaction term   
 count_data$aid_interaction <- count_data$hum_scaled_lag * count_data$intense  
@@ -37,7 +38,15 @@ count_data <- count_data %>%
 count_data$region.id.copy <- count_data$region_idx
 # Creating the lagged death variable
 count_data$deaths_scaled_lag <- lag(count_data$deaths_scaled, n = 1)
+count_data$deaths_lag <- lag(count_data$deaths, n = 1)
 
+#Robustnes tests exclusions remove the # to check for the outliers of a variable
+# remove mortality outliers
+#count_data <- count_data %>% filter(Y/total < 0.3)
+# remove aid outliers 
+#count_data <- count_data %>% filter(hum_lag < 400000000)
+# remove death outliers 
+#count_data <- count_data %>% filter(deaths_lag < 5000)
 
 ## This is the model function. Remove the # for the fixed effects variable 
 ## to change the model configuration 
@@ -172,3 +181,4 @@ glm_model <- glm(
 
 summary(glm_model)
 saveRDS(glm_model, file = "C:/Users/fabia/OneDrive/Desktop/Saved outputs/glm_model_final.rds")
+p/Saved outputs/glm_model_final.rds")
